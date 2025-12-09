@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClickClickClick</title>
+    <style>
+        body {
+            background-color: #333;
+            font-family: 'Consolas', monospace;
+            color: #00ff00;
+            text-align: center;
+            padding-top: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        #mainContainer {
+            display: flex;
+            width: 90%;
+            max-width: 1000px;
+            margin-top: 20px;
+            gap: 40px;
+        }
+        #gameArea {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        button {
+            background-color: #008000;
+            color: white;
+            font-size: 20px;
+            padding: 10px 20px;
+            margin: 10px;
+            border: 3px solid #00ff00;
+            border-radius: 0;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+        button:hover {
+            background-color: #00ff00;
+            color: black;
+        }
+        button:disabled {
+            background-color: #444;
+            border-color: #555;
+            color: #999;
+            cursor: not-allowed;
+        }
+        #message {
+            margin: 20px auto;
+            font-weight: bold;
+            font-size: 24px;
+            color: yellow;
+            padding: 5px;
+            border: 1px dashed yellow;
+            max-width: 400px;
+        }
+        .info-panel {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        #playerCpsDisplay {
+            color: #ff8c00; 
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #upgradePanel {
+            border: 1px solid #00ff00;
+            padding: 15px;
+            margin: 30px auto;
+            max-width: 500px;
+        }
+        #upgradePanel button {
+            background-color: #800080;
+            border-color: #ff00ff;
+        }
+        #leaderboard {
+            flex: 1;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            text-align: left;
+        }
+        #leaderboard h3 {
+            text-align: center;
+            color: #ff00ff;
+        }
+        #scoresTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #scoresTable th, #scoresTable td {
+            padding: 5px;
+            border-bottom: 1px dashed #00ff00;
+        }
+        #scoresTable th {
+            color: #00ff00;
+            font-size: 16px;
+        }
+</style>
+</head>
+<body>
+    <h1>Clicker v2</h1>
+    
+    <div id="mainContainer">
+        <div id="gameArea">
+            <div class="info-panel">
+                <p>Best Result: <span id="highScore">0</span></p>
+                <p id="timer">Time: 30s</p>
+                <p>Auto-CPS: <span id="cpsDisplay">0</span></p>
+                <p>CPS: <span id="playerCpsDisplay">0.00</span></p>
+            </div>
+            
+            <button id="clickBtn">ClickClickClick(CPS: <span id="clickPowerDisplay">1</span>)</button>
+            
+            <div id="upgradePanel">
+                <h3>Secret Shop (Buy Auto-CPS)</h3>
+                <button id="buyUpgradeBtn">Buy Update (+1 Auto-CPS) - Price: <span id="upgradeCostDisplay">10</span></button>
+            </div>
+
+            <p>Clicks: <span id="counter">0</span></p>
+            <div id="message"></div>
+            <button id="resetBtn" style="display: none;">Restart</button>
+        </div>
+        
+        <div id="leaderboard">
+            <h3>Top World [TOP-5]</h3>
+            <table id="scoresTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody id="scoresList">
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        const MAX_TIME = 30;
+        const LEADERBOARD_KEY = 'clickerLeaderboard';
+        const CPS_SAMPLE_SIZE = 999;
+        const ACHIEVEMENT_MESSAGES = [
+        "First Click",
+        "Clicking Spree",
+        "Dominating",
+        "Mega Click",
+        "Monster Click",
+        "Unstoppable",
+        "Wicked Sick",
+        "Ownage",
+        "Godlike",
+        "Beyond Godlike",
+        "Rampage"
+        ];
+        
+        let count = 0;
+        let gameActive = false;
+        let timeLeft = MAX_TIME;
+        let timerHandle;
+        let cpsHandle;
+        
+        let clickPower = 1;
+        let currentCPS = 0;
+        let upgradeCost = 10;
+        
+        let clickTimes = [];
+
+        let bestScore = localStorage.getItem('bestScore') ? parseInt(localStorage.getItem('bestScore')) : 0;
+        let leaderboard = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
+
+        const counterEl = document.getElementById('counter');
+        const clickBtn = document.getElementById('clickBtn');
+        const messageEl = document.getElementById('message');
+        const timerEl = document.getElementById('timer');
+        const resetBtn = document.getElementById('resetBtn');
+        const highScoreEl = document.getElementById('highScore');
+        const cpsDisplayEl = document.getElementById('cpsDisplay');
+        const playerCpsDisplayEl = document.getElementById('playerCpsDisplay');
+        const buyUpgradeBtn = document.getElementById('buyUpgradeBtn');
+        const upgradeCostDisplayEl = document.getElementById('upgradeCostDisplay');
+        const clickPowerDisplayEl = document.getElementById('clickPowerDisplay');
+        const scoresListEl = document.getElementById('scoresList');
+
+        highScoreEl.textContent = bestScore;
+        upgradeCostDisplayEl.textContent = upgradeCost;
+
+        function generateRandomColor() {
+            const hexChars = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += hexChars[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        function calculatePlayerCPS() {
+            const now = performance.now();
+            clickTimes.push(now);
+
+            while (clickTimes.length > CPS_SAMPLE_SIZE) {
+                clickTimes.shift();
+            }
+
+            if (clickTimes.length < 2) {
+                playerCpsDisplayEl.textContent = '0.00';
+                return;
+            }
+
+            const timeDiff = now - clickTimes[0];
+            const clicks = clickTimes.length - 1;
+            const timeInSeconds = timeDiff / 1000;
+
+            const calculatedCps = timeInSeconds > 0 ? (clicks / timeInSeconds) : 0;
+            playerCpsDisplayEl.textContent = calculatedCps.toFixed(2);
+        }
+        
+        function updateDisplay() {
+            counterEl.textContent = count;
+            cpsDisplayEl.textContent = currentCPS;
+            upgradeCostDisplayEl.textContent = upgradeCost;
+            clickPowerDisplayEl.textContent = clickPower;
+            
+            if (count >= upgradeCost) {
+                buyUpgradeBtn.disabled = false;
+            } else {
+                buyUpgradeBtn.disabled = true;
+            }
+        }
+
+        function saveLeaderboard(newScore) {
+            leaderboard.push(newScore);
+            leaderboard.sort((a, b) => b.score - a.score);
+            leaderboard = leaderboard.slice(0, 5);
+            localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
+            renderLeaderboard();
+        }
+
+        function renderLeaderboard() {
+            scoresListEl.innerHTML = '';
+
+            leaderboard.forEach((record, index) => {
+                const row = scoresListEl.insertRow();
+                row.insertCell().textContent = index + 1;
+                row.insertCell().textContent = record.name;
+                row.insertCell().textContent = record.score;
+            });
+        }
+        
+        function beginGame() {
+            if (!gameActive) {
+                gameActive = true;
+                messageEl.textContent = "Game Started!";
+                resetBtn.style.display = 'none';
+                
+                timerEl.textContent = `Time: ${timeLeft}s`;
+                timerHandle = setInterval(() => {
+                    timeLeft--;
+                    timerEl.textContent = `Time: ${timeLeft}s`;
+
+                    if (timeLeft <= 0) {
+                        endGame();
+                    }
+                }, 1000);
+                
+                cpsHandle = setInterval(() => {
+                    if (currentCPS > 0) {
+                        count += currentCPS;
+                        updateDisplay();
+                    }
+                }, 1000);
+            }
+        }
+        
+        function endGame() {
+            clearInterval(timerHandle);
+            clearInterval(cpsHandle);
+            clickBtn.disabled = true;
+            
+            let finalMsg = `RRAMPAGE! Final Result: ${count}`;
+            
+            if (count > bestScore) {
+                bestScore = count;
+                localStorage.setItem('bestScore', bestScore);
+                highScoreEl.textContent = bestScore;
+                finalMsg += "NEW RECORD!";
+            }
+            
+            messageEl.textContent = finalMsg;
+            resetBtn.style.display = 'inline-block';
+            buyUpgradeBtn.disabled = true;
+            
+            if (leaderboard.length < 5 || count > leaderboard[leaderboard.length - 1].score) {
+                let playerName = prompt(`DIVINE RAMPAGE! Your record (${count}) placed TOP-5. Your NickName:`, "Player");
+                
+                if (!playerName || playerName.trim() === "") {
+                    playerName = "Anonymous";
+                }
+
+                const newRecord = {
+                    name: playerName.substring(0, 10),
+                    score: count
+                };
+                saveLeaderboard(newRecord);
+            }
+            playerCpsDisplayEl.textContent = '0.00';
+        }
+        
+        function doReset() {
+            count = 0;
+            gameActive = false;
+            timeLeft = MAX_TIME;
+            clickTimes = [];
+            
+            messageEl.textContent = "Game Over. You can click new record.";
+            clickBtn.disabled = false;
+            resetBtn.style.display = 'none';
+            clickBtn.style.backgroundColor = '#008000';
+            
+            updateDisplay();
+            playerCpsDisplayEl.textContent = '0.00';
+        }
+        
+        function buyUpgrade() {
+            if (count >= upgradeCost) {
+                count -= upgradeCost;
+                currentCPS += 1;
+                upgradeCost = Math.round(upgradeCost * 1.5);
+                
+                messageEl.textContent = `You buy +1 Auto-CPS! Now Auto-CPS: ${currentCPS}`;
+                updateDisplay();
+            } else {
+                messageEl.textContent = "Denied. You don't have clicks.";
+            }
+        }
+        
+        clickBtn.addEventListener('click', () => {
+            beginGame();
+            
+            if (gameActive && timeLeft > 0) {
+                count += clickPower;
+                clickBtn.style.backgroundColor = generateRandomColor();
+                
+                calculatePlayerCPS();
+                
+                if (count % 20 === 0 && count > 0) {
+                    const messageIndex = (count / 20) % ACHIEVEMENT_MESSAGES.length;
+                    messageEl.textContent = ACHIEVEMENT_MESSAGES[messageIndex];
+                } else if (ACHIEVEMENT_MESSAGES.includes(messageEl.textContent)) {
+                 
+                }
+
+                updateDisplay();
+            }
+        });
+        
+        resetBtn.addEventListener('click', doReset);
+        buyUpgradeBtn.addEventListener('click', buyUpgrade);
+
+        renderLeaderboard();
+        updateDisplay();
+        
+    </script>
+</body>
+</html>
